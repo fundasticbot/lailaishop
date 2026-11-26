@@ -1,0 +1,6 @@
+name = "www" # Replace with your existing Worker's name
+compatibility_date = "2026-10-20"
+
+[assets]
+directory = "."
+
