@@ -3361,31 +3361,34 @@ function lookupBarcodeExternal_(code) {
     }
   } catch (e) { console.warn('UPCitemdb search failed: ' + e); }
 
-  // 8) ReefAPI free lane — no signup needed for the shared demo key.
-  //    Rate-limited, but useful for Asian products that the Open*Facts family misses.
-  try {
-    const resp = UrlFetchApp.fetch(
-      'https://api.reefapi.com/barcode/v1/search?key=REDACTED_REEFAPI_KEY&query=' +
-        encodeURIComponent(code),
-      { muteHttpExceptions: true }
-    );
-    if (resp.getResponseCode() === 200) {
-      const data = JSON.parse(resp.getContentText());
-      const row = data && data.data && data.data[0];
-      if (row && row.title) {
-        return {
-          found: true,
-          source: 'ReefAPI',
-          barcode: code,
-          name: String(row.title || '').trim(),
-          brand: String(row.brand || '').trim(),
-          category: String(row.category || '').trim(),
-          description: String(row.description || '').slice(0, 300),
-          image_url: String(row.image || '')
-        };
+  // 8) Optional ReefAPI lane. Configure PETSHOP_REEFAPI_KEY in Script
+  //    Properties for a private installation; never put the key in source.
+  const reefKey = String(PropertiesService.getScriptProperties().getProperty('PETSHOP_REEFAPI_KEY') || '').trim();
+  if (reefKey) {
+    try {
+      const resp = UrlFetchApp.fetch(
+        'https://api.reefapi.com/barcode/v1/search?key=' + encodeURIComponent(reefKey) + '&query=' +
+          encodeURIComponent(code),
+        { muteHttpExceptions: true }
+      );
+      if (resp.getResponseCode() === 200) {
+        const data = JSON.parse(resp.getContentText());
+        const row = data && data.data && data.data[0];
+        if (row && row.title) {
+          return {
+            found: true,
+            source: 'ReefAPI',
+            barcode: code,
+            name: String(row.title || '').trim(),
+            brand: String(row.brand || '').trim(),
+            category: String(row.category || '').trim(),
+            description: String(row.description || '').slice(0, 300),
+            image_url: String(row.image || '')
+          };
+        }
       }
-    }
-  } catch (e) { console.warn('ReefAPI lookup failed: ' + e); }
+    } catch (e) { console.warn('ReefAPI lookup failed: ' + e); }
+  }
 
   return { found: false, reason: 'not_found', barcode: code };
 }

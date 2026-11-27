@@ -15,6 +15,8 @@ This repository contains the application source only. It does not contain a
 shop's spreadsheet ID, web-app URL, credentials, customer data, or production
 exports.
 
+Current release: **0.1.0 — Chihuahua**. See [`CHANGELOG.md`](CHANGELOG.md).
+
 ## Try the demo
 
 Open the live demo at **<https://demo.lailaishop.workers.dev>** to explore the
@@ -63,6 +65,9 @@ PETSHOP_SPREADSHEET_ID = <the shop spreadsheet ID>
 
 The spreadsheet ID is the text between `/d/` and `/edit` in the Sheet URL.
 Keep it in Script Properties, never in Git.
+
+The optional ReefAPI barcode lookup is disabled unless you set
+`PETSHOP_REEFAPI_KEY` in Script Properties. The application works without it.
 
 ## 2. Initialize the shop
 
@@ -173,3 +178,10 @@ Read [`AI_CONTEXT.md`](AI_CONTEXT.md) before changing code. Treat `Code.gs`
 as the backend authority and trace every frontend change through its matching
 RPC function, authorization check, cache path, and rendering path. Keep
 deployment-specific configuration outside source control.
+
+## License
+
+This project is licensed under the **GNU Affero General Public License v3.0
+only**. See [`LICENSE`](LICENSE). Commercial hosting and support services may
+be offered separately, while modifications to a network-served version must
+follow the AGPL source-sharing terms.
