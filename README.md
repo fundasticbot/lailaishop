@@ -15,6 +15,15 @@ This repository contains the application source only. It does not contain a
 shop's spreadsheet ID, web-app URL, credentials, customer data, or production
 exports.
 
+## Try the demo
+
+Open the live demo at **<https://demo.lailaishop.workers.dev>** to explore the
+interface before installing your own shop. It uses synthetic data and is
+resettable, so do not enter real customer, pet, payment, or staff information.
+
+The demo is a shared environment. For production use, create a separate Google
+Sheet and Apps Script deployment by following the installation steps below.
+
 ## Choose a deployment
 
 There are two supported ways to run one shop:
