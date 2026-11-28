@@ -1,6 +1,6 @@
 # Changelog
 
-## v590 — Locale currency fix (2026-11-28)
+## 0.1.1 — Chihuahua (2026-11-28)
 
 - Derive Commission currency from the selected shop country when the stored
   currency symbol is missing.

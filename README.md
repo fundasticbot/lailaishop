@@ -15,7 +15,7 @@ This repository contains the application source only. It does not contain a
 shop's spreadsheet ID, web-app URL, credentials, customer data, or production
 exports.
 
-Current release: **0.1.0 — Chihuahua**. See [`CHANGELOG.md`](CHANGELOG.md).
+Current release: **0.1.1 — Chihuahua**. See [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Try the demo
 
