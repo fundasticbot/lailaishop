@@ -96,6 +96,18 @@ Open the URL in a private browser window and complete the owner setup. Test
 creating a customer, pet, service, product, booking, and sale before inviting
 staff.
 
+## Shop country, language, currency, and time zone
+
+After signing in as the owner or manager, open **Settings → Shop locale**. Choose
+the shop country and language. The country preset also sets the currency symbol
+and time zone used by the POS, reports, and receipts; you can fine-tune the time
+zone in the same panel. Existing shops default to Malaysia (`MYR`, `RM`,
+`Asia/Kuala_Lumpur`) until a setting is saved, so this is backward-compatible.
+
+The locale setting does not configure local tax, VAT/GST, payment gateways, or
+legal receipt requirements. Those remain shop-specific configuration and should
+be reviewed before operating in Australia, the UK, the US, or another country.
+
 ## 4. Optional Cloudflare frontend
 
 The Cloudflare frontend is a static copy of the UI. Apps Script still handles
@@ -159,6 +171,12 @@ provider and should be confirmed before treating an offline payment as final.
 5. Sign in and test one read, one write, one booking, one sale, and sync status.
 
 Do not delete or recreate the spreadsheet during an application update.
+
+### Versioning rule
+
+Every source or frontend documentation edit must bump the visible `APP_VERSION`
+and update the timestamp in both `Index.html` and `cloudflare/index.html`.
+Keep those two frontend release markers synchronized.
 
 ## Source map
 

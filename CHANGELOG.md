@@ -1,5 +1,14 @@
 # Changelog
 
+## v590 — Locale currency fix (2026-11-28)
+
+- Derive Commission currency from the selected shop country when the stored
+  currency symbol is missing.
+- Refresh Commission after saving Locale and keep the selected currency in the
+  active company settings.
+- Deploy the current locale persistence implementation to the demo Apps Script.
+- Verified that USA locale survives a full reload and Commission shows USD.
+
 ## 0.1.0 — Chihuahua
 
 First open-source single-shop release.

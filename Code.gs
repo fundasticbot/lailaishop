@@ -1,4 +1,4 @@
-// PetShop v473-barcode | TS: 2026-10-21 16:45 MYT
+// PetShop v585-server-sync-and-locale | TS: 2026-11-28 20:44 MYT
 const CONFIG = {
   // Keep this empty in source control. Configure PETSHOP_SPREADSHEET_ID
   // in Script Properties, or set this value locally for a private install.
@@ -21,6 +21,19 @@ const CONFIG = {
     SETTINGS: 'Settings'
   }
 };
+// Shop-local defaults. Existing installations fall back to Malaysia so changing
+// locale is opt-in and does not alter historical data or existing receipts.
+const LOCALE_PRESETS_ = {
+  MY: {country_name:'Malaysia', language:'en', currency_code:'MYR', currency_symbol:'RM', timezone:'Asia/Kuala_Lumpur'},
+  AU: {country_name:'Australia', language:'en', currency_code:'AUD', currency_symbol:'A$', timezone:'Australia/Sydney'},
+  GB: {country_name:'United Kingdom', language:'en', currency_code:'GBP', currency_symbol:'£', timezone:'Europe/London'},
+  US: {country_name:'United States', language:'en', currency_code:'USD', currency_symbol:'$', timezone:'America/New_York'},
+  CA: {country_name:'Canada', language:'en', currency_code:'CAD', currency_symbol:'C$', timezone:'America/Toronto'},
+  NZ: {country_name:'New Zealand', language:'en', currency_code:'NZD', currency_symbol:'NZ$', timezone:'Pacific/Auckland'},
+  SG: {country_name:'Singapore', language:'en', currency_code:'SGD', currency_symbol:'S$', timezone:'Asia/Singapore'},
+  CN: {country_name:'China', language:'zh', currency_code:'CNY', currency_symbol:'¥', timezone:'Asia/Shanghai'}
+};
+const LOCALE_DEFAULT_COUNTRY_ = 'MY';
 const SCHEMA = {
   Customers: ['customer_id','name','phone','email','address','notes','photo_url','created_at','active'],
   Pets: ['pet_id','customer_id','name','species','breed','sex','dob','weight_kg','vaccination_due','allergies','temperament','notes','sticky_note','photo_url','created_at','active'],
@@ -42,10 +55,10 @@ const SCHEMA = {
   Settings: ['key','value']
 };
 // RELEASE MARKER — update these three values for every ZIP/deployment (keep in sync with Index.html).
-const APP_RELEASE_VERSION = 'v443-cloudflare-gateway';
-const APP_SCRIPT_VERSION = '179';
+const APP_RELEASE_VERSION = 'v590-locale-currency-fallback-fix';
+const APP_SCRIPT_VERSION = '183';
 let RECEIPT_BACKGROUND_CONTEXT_ = false;
-const APP_RELEASED_AT = '2026-10-21 16:45 MYT';
+const APP_RELEASED_AT = '2026-11-28 21:55 MYT';
 // Raw sale-ID public receipt links are disabled immediately; opaque receipt tokens only.
 const RECEIPT_PHONE_FAIL_LIMIT_ = 5;
 const RECEIPT_PHONE_LOCK_MINUTES_ = 15;
@@ -342,8 +355,8 @@ function authResetOwnerPassword(code, newPassword) {
 }
 const AUTH_API_FUNCTIONS_ = {
   applyMutationBatch: applyMutationBatch, outcome_lookup: outcome_lookup, getProcessingSaleResolution: getProcessingSaleResolution, resolveProcessingSale: resolveProcessingSale, discardMutation: discardMutation, registerOfflineDiscard: registerOfflineDiscard, getMutationLedgerHealth: getMutationLedgerHealth,
-  getDataVersion: getDataVersion, getPageData: getPageData, getData: getData, search: search,
-  getCompanySettings: getCompanySettings, saveCompanySettings: saveCompanySettings,
+  getDataVersion: getDataVersion, getSyncCollectionPage: getSyncCollectionPage, getPageData: getPageData, getData: getData, search: search,
+  getCompanySettings: getCompanySettings, saveCompanySettings: saveCompanySettings, saveShopLocale: saveShopLocale,
   getSessionTimeoutSetting: getSessionTimeoutSetting, saveSessionTimeoutSetting: saveSessionTimeoutSetting,
   getRolePagePermissions: getRolePagePermissions, saveRolePagePermissions: saveRolePagePermissions,
   getStaffMembers: getStaffMembers, saveStaffProfile: saveStaffProfile, addStaffMember: addStaffMember,
@@ -448,7 +461,7 @@ function apiCall(name, args, token) {
   const op = String(name || '');
   const page = op === 'getPageData' ? String((args || [])[0] || '') : '';
   if (page && !roleCanOpenPage_(session.role, page)) throw new Error('Permission denied. Your role does not have access to this page.');
-  if (['getCompanySettings','saveCompanySettings','getSessionTimeoutSetting','saveSessionTimeoutSetting','getMutationLedgerHealth','saveStaffProfile','addStaffMember','saveStaffRole','saveStaffStatus','saveStaffPassword','getGroomerCommissionData','getStaffCommissionReport','saveGroomerCommissionRates'].includes(op) && !roleCanOpenPage_(session.role, 'settings')) throw new Error('Permission denied. Your role does not have access to Settings.');
+  if (['getCompanySettings','saveCompanySettings','saveShopLocale','getSessionTimeoutSetting','saveSessionTimeoutSetting','getMutationLedgerHealth','saveStaffProfile','addStaffMember','saveStaffRole','saveStaffStatus','saveStaffPassword','getGroomerCommissionData','getStaffCommissionReport','saveGroomerCommissionRates'].includes(op) && !roleCanOpenPage_(session.role, 'settings')) throw new Error('Permission denied. Your role does not have access to Settings.');
   if (['getStaffMembers','getStaffProfilePage','getStaffProfilePages','saveStaffCommissionRates'].includes(op) && !roleCanOpenPage_(session.role, 'staff')) throw new Error('Permission denied. Your role does not have access to the Staff page.');
   if (['getSaleDetails','getSaleDetailsBatch','getReceiptPrintHtml','emailSaleReceipt','getReceiptPdfLink','getReceiptHtml','getReceiptPdf','regenerateReceiptLink','editSaleReceipt','preGenerateReceipt','syncReceiptBatch','getReceiptStatuses','startReceiptSync','getReceiptSyncProgress','processReceiptSyncQueue_','getSaleAudit','outcome_lookup','getProcessingSaleResolution','resolveProcessingSale','discardMutation'].includes(op) && !roleCanOpenPage_(session.role, 'sales')) throw new Error('Permission denied. Your role does not have access to Sales.');
   const staffBlocked = ['getStaffMembers','getStaffProfilePage','getStaffProfilePages','saveStaffProfile','addStaffMember','saveStaffRole','saveStaffStatus','saveStaffPassword','saveProductCategory','deleteProductCategory','receiveInventory'];
@@ -950,7 +963,7 @@ function renderPublicReceipt_(saleId) {
   // page appears so customers see the page and progress indicator without a blank wait.
   if (!id) return HtmlService.createHtmlOutput('<h2>Receipt link is invalid</h2>').setTitle('PetShop Receipt');
   const safeId = htmlEscape_(id).replace(/'/g, '&#39;');
-  const currency = htmlEscape_(CONFIG.CURRENCY);
+  const currency = htmlEscape_(getCompanySettings_().currency_symbol || CONFIG.CURRENCY);
   const ogImageTag = '';
   const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta property="og:title" content="PetShop Receipt"><meta property="og:description" content="Open this page to view, print, or download your PetShop receipt.">${ogImageTag}<title>PetShop Receipt</title><style>
 body{font-family:Arial,sans-serif;background:#f6f7f9;margin:0;padding:20px;color:#222}.box{max-width:520px;margin:auto;background:#fff;padding:22px;border-radius:14px;box-shadow:0 2px 12px #0001}h1{font-size:22px}.err{color:#b00020;margin-top:10px}.receipt table{width:100%;border-collapse:collapse;margin-top:16px}.receipt td,.receipt th{padding:8px;border-bottom:1px solid #eee;text-align:left}.receipt .right{text-align:right}.total{font-size:20px;font-weight:700}.photos{display:flex;flex-wrap:wrap}.photos img{max-width:180px;max-height:180px;object-fit:cover;margin:4px;border-radius:8px}input{box-sizing:border-box;width:100%;padding:12px;border:1px solid #ccc;border-radius:8px;font-size:16px}button{margin-top:12px;padding:11px 16px;border:0;border-radius:8px;background:#222;color:#fff;font-size:16px;cursor:pointer}button:disabled{opacity:.6}.progressWrap{height:8px;background:#f2dce6;border-radius:99px;overflow:hidden;margin:12px 0;display:none}.progressWrap.show{display:block}.progressBar{height:100%;width:35%;background:#df6d9d;border-radius:99px;animation:receiptProgress 1.1s ease-in-out infinite alternate}@keyframes receiptProgress{from{transform:translateX(-20%);width:25%}to{transform:translateX(250%);width:45%}}.progressText{font-size:13px;color:#8a6875;margin-top:6px;display:none}.progressText.show{display:block}
@@ -973,8 +986,12 @@ window.addEventListener('load',()=>setTimeout(loadReceipt,0));
 function getSS_(allowCreate) {
   if (CONFIG.SPREADSHEET_ID) return SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
   const props = PropertiesService.getScriptProperties();
-  const savedId = props.getProperty('PETSHOP_SPREADSHEET_ID');
-  if (savedId) return SpreadsheetApp.openById(savedId);
+  const savedId = props.getProperty('PETSHOP_SPREADSHEET_ID') || props.getProperty('PETSHOP_DEMO_SPREADSHEET_ID');
+  if (savedId) {
+    // Demo installations use the explicit demo property; promote it to the shared key once.
+    if (!props.getProperty('PETSHOP_SPREADSHEET_ID')) props.setProperty('PETSHOP_SPREADSHEET_ID', savedId);
+    return SpreadsheetApp.openById(savedId);
+  }
   let active = null;
   try { active = SpreadsheetApp.getActiveSpreadsheet(); } catch (e) {}
   if (active) {
@@ -1006,6 +1023,28 @@ function getDataVersion(_authSession) {
   const p=PropertiesService.getScriptProperties(), collections={};
   Object.keys(SCHEMA).forEach(name=>{collections[name]=p.getProperty('DATA_VERSION_COL_'+name)||'0';});
   return {global:p.getProperty('DATA_VERSION')||'1',collections:collections};
+}
+function getSyncCollectionPage(_authSession, collectionName, offset, pageSize) {
+  requireAuthorizedUser_(_authSession);
+  const name=String(collectionName||'').trim();
+  if(!Object.prototype.hasOwnProperty.call(SCHEMA,name)) throw new Error('Unknown sync collection.');
+  offset=Number(offset||0);pageSize=Number(pageSize||250);
+  if(!Number.isSafeInteger(offset)||offset<0) throw new Error('Invalid sync offset.');
+  if(!Number.isSafeInteger(pageSize)||pageSize<1) throw new Error('Invalid sync page size.');
+  pageSize=Math.min(pageSize,250);
+  const pageByCollection={
+    Customers:'customers',Pets:'customers',MembershipPlans:'membership',Memberships:'membership',
+    Services:'catalog',Products:'catalog',Promotions:'catalog',Bookings:'bookings',Boarding:'boarding',
+    BoardingRooms:'boarding',Sales:'sales',SaleItems:'sales',Payments:'sales',SaleRevisions:'sales',
+    SaleAudit:'sales',GroomerWork:'groomer',Inventory:'catalog',Settings:'settings'
+  };
+  const page=pageByCollection[name];
+  if(page&&!roleCanOpenPage_(_authSession.role,page)) throw new Error('Permission denied. Your role does not have access to this data.');
+  if(name==='Settings') requireRole_(_authSession,['OWNER']);
+  let all=rows_(name);
+  if(name==='Products'&&String(_authSession.role||'').toUpperCase()==='STAFF') all=all.map(p=>{const x={...p};delete x.cost;delete x.avg_cost;return x;});
+  const total=all.length, start=Math.min(offset,total), rows=all.slice(start,start+pageSize);
+  return {rows:rows,offset:offset,total:total,done:start+rows.length>=total};
 }
 function formulaSafeSheetValue_(value) {
   // Keep actual numeric/date/boolean values typed; only escape untrusted text.
@@ -1576,13 +1615,14 @@ function getReceiptHtml(_authSession, saleId, includePhotos, publicAccess) {
   const petLabel = receiptPetLabel_(pet, s, items);
   const petHtml = petLabel ? '<br>Pet: '+htmlEscape_(petLabel) : '';
   const logoSrc = companyLogoDataUrl_(co.logo_url);
+  const currency = htmlEscape_(co.currency_symbol || CONFIG.CURRENCY);
   const logo = logoSrc ? '<img class="logo" src="'+htmlEscape_(logoSrc)+'">' : '';
   // Public receipts never display payment/social QR codes; avoid unnecessary Drive reads.
   const tngQrSrc = !publicAccess && co.tng_qr_active !== false ? companyLogoDataUrl_(co.tng_qr_url) : '';
   const duitnowQrSrc = !publicAccess && co.duitnow_qr_active !== false ? companyLogoDataUrl_(co.duitnow_qr_url) : '';
   const socmedQrSrc = !publicAccess && co.socmed_qr_active === true ? companyLogoDataUrl_(co.socmed_qr_url) : '';
   const paymentQrHtml = (!publicAccess && (tngQrSrc || duitnowQrSrc || socmedQrSrc)) ? '<div class="payment-qr"><h3>Scan to pay / connect</h3><p>For payment QR codes, enter the total amount shown above.</p><div class="qr-list">'+(tngQrSrc ? '<div><b>Touch &#39;n Go</b><br><img src="'+htmlEscape_(tngQrSrc)+'"></div>' : '')+(duitnowQrSrc ? '<div><b>DuitNow</b><br><img src="'+htmlEscape_(duitnowQrSrc)+'"></div>' : '')+(socmedQrSrc ? '<div><b>Social media</b><br><img src="'+htmlEscape_(socmedQrSrc)+'"></div>' : '')+'</div></div>' : '';
-  const html = '<!doctype html><html><head><meta charset="utf-8"><style>@page{size:A4;margin:16mm}body{font-family:'+styles.font+';color:#222;background:'+styles.bg+';margin:0;padding:8px}.sheet{border:1px solid '+styles.border+';padding:24px;border-radius:12px}.head{border-bottom:3px solid '+styles.accent+';padding-bottom:14px;margin-bottom:18px}.logo{max-width:170px;max-height:75px;object-fit:contain;margin-bottom:8px}h1{color:'+styles.accent+';margin:0 0 5px;font-size:25px}h2{font-size:16px;color:'+styles.accent+'}table{width:100%;border-collapse:collapse;margin-top:16px}th{background:'+styles.accent+';color:#fff}td,th{padding:8px;border-bottom:1px solid '+styles.border+';text-align:left;font-size:11px}th:nth-child(n+2),td:nth-child(n+2){text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}.right{text-align:right}.summary{width:100%;margin-top:14px}.summary-row{display:flex;justify-content:space-between;align-items:baseline;padding:3px 0}.summary-row .label{text-align:left}.summary-row .value{text-align:right;min-width:120px;font-variant-numeric:tabular-nums;white-space:nowrap}.summary{width:100%;margin-top:14px}.summary-row{display:flex;justify-content:space-between;align-items:baseline;padding:3px 0}.summary-row .label{text-align:left}.summary-row .value{text-align:right;min-width:120px;font-variant-numeric:tabular-nums;white-space:nowrap}.total{font-size:20px;font-weight:700;color:'+styles.accent+'}.photos{margin-top:22px;border-top:1px solid '+styles.border+';padding-top:12px}.photos img{width:145px;height:145px;object-fit:cover;margin:4px;border-radius:8px;border:1px solid '+styles.border+'}.before-after-pair{display:flex;gap:16px;flex-wrap:wrap}.before-after-pair>div{text-align:center}.before-after-pair img{width:180px;height:180px;object-fit:cover}.message{margin-top:22px;border-top:1px solid '+styles.border+';padding-top:12px;white-space:pre-wrap}.payment-qr{margin-top:22px;border-top:1px solid '+styles.border+';padding-top:12px;text-align:center}.qr-list{display:flex;justify-content:center;gap:18px;flex-wrap:wrap}.qr-list img{width:160px;height:160px;object-fit:contain}</style></head><body><div class="sheet"><div class="head">'+logo+'<h1>'+htmlEscape_(co.store_name || 'PetShop')+'</h1>'+(!publicAccess && co.address?'<div>'+htmlEscape_(co.address)+'</div>':'')+(co.email?'<div>'+htmlEscape_(co.email)+'</div>':'')+(co.contact?'<div>'+htmlEscape_(co.contact)+'</div>':'')+'</div><div><b>Receipt</b> '+htmlEscape_(s.sale_id||'')+'<br>'+htmlEscape_(s.sale_at||'')+'</div><p><b>'+htmlEscape_(c.name||'Walk-in')+'</b>'+(c.phone?'<br>'+htmlEscape_(c.phone):'')+petHtml+'</p><table><tr><th>Description</th><th>Qty</th><th>Unit</th><th>Discount</th><th class="right">Total</th></tr>'+items.map(x=>'<tr><td>'+htmlEscape_(x.description)+'</td><td>'+htmlEscape_(x.qty)+'</td><td>'+CONFIG.CURRENCY+' '+Number(x.unit_price||0).toFixed(2)+'</td><td>'+CONFIG.CURRENCY+' '+Number(x.discount||0).toFixed(2)+'</td><td class="right">'+CONFIG.CURRENCY+' '+Number(x.line_total||0).toFixed(2)+'</td></tr>').join('')+'</table><div class="summary"><div class="summary-row"><span class="label">Subtotal</span><span class="value">'+CONFIG.CURRENCY+' '+Number(s.subtotal||0).toFixed(2)+'</span></div><div class="summary-row"><span class="label">Discount</span><span class="value">'+CONFIG.CURRENCY+' '+Number(s.discount||0).toFixed(2)+'</span></div><div class="summary-row total"><span class="label">TOTAL</span><span class="value">'+CONFIG.CURRENCY+' '+Number(s.total||0).toFixed(2)+'</span></div><div class="summary-row"><span class="label">Payment</span><span class="value">'+htmlEscape_(s.payment_method||'')+'</span></div></div>'+paymentQrHtml+photoHtml+'<p style="margin-top:24px;color:#666">Thank you for visiting us.</p></div></body></html>';
+  const html = '<!doctype html><html><head><meta charset="utf-8"><style>@page{size:A4;margin:16mm}body{font-family:'+styles.font+';color:#222;background:'+styles.bg+';margin:0;padding:8px}.sheet{border:1px solid '+styles.border+';padding:24px;border-radius:12px}.head{border-bottom:3px solid '+styles.accent+';padding-bottom:14px;margin-bottom:18px}.logo{max-width:170px;max-height:75px;object-fit:contain;margin-bottom:8px}h1{color:'+styles.accent+';margin:0 0 5px;font-size:25px}h2{font-size:16px;color:'+styles.accent+'}table{width:100%;border-collapse:collapse;margin-top:16px}th{background:'+styles.accent+';color:#fff}td,th{padding:8px;border-bottom:1px solid '+styles.border+';text-align:left;font-size:11px}th:nth-child(n+2),td:nth-child(n+2){text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}.right{text-align:right}.summary{width:100%;margin-top:14px}.summary-row{display:flex;justify-content:space-between;align-items:baseline;padding:3px 0}.summary-row .label{text-align:left}.summary-row .value{text-align:right;min-width:120px;font-variant-numeric:tabular-nums;white-space:nowrap}.summary{width:100%;margin-top:14px}.summary-row{display:flex;justify-content:space-between;align-items:baseline;padding:3px 0}.summary-row .label{text-align:left}.summary-row .value{text-align:right;min-width:120px;font-variant-numeric:tabular-nums;white-space:nowrap}.total{font-size:20px;font-weight:700;color:'+styles.accent+'}.photos{margin-top:22px;border-top:1px solid '+styles.border+';padding-top:12px}.photos img{width:145px;height:145px;object-fit:cover;margin:4px;border-radius:8px;border:1px solid '+styles.border+'}.before-after-pair{display:flex;gap:16px;flex-wrap:wrap}.before-after-pair>div{text-align:center}.before-after-pair img{width:180px;height:180px;object-fit:cover}.message{margin-top:22px;border-top:1px solid '+styles.border+';padding-top:12px;white-space:pre-wrap}.payment-qr{margin-top:22px;border-top:1px solid '+styles.border+';padding-top:12px;text-align:center}.qr-list{display:flex;justify-content:center;gap:18px;flex-wrap:wrap}.qr-list img{width:160px;height:160px;object-fit:contain}</style></head><body><div class="sheet"><div class="head">'+logo+'<h1>'+htmlEscape_(co.store_name || 'PetShop')+'</h1>'+(!publicAccess && co.address?'<div>'+htmlEscape_(co.address)+'</div>':'')+(co.email?'<div>'+htmlEscape_(co.email)+'</div>':'')+(co.contact?'<div>'+htmlEscape_(co.contact)+'</div>':'')+'</div><div><b>Receipt</b> '+htmlEscape_(s.sale_id||'')+'<br>'+htmlEscape_(s.sale_at||'')+'</div><p><b>'+htmlEscape_(c.name||'Walk-in')+'</b>'+(c.phone?'<br>'+htmlEscape_(c.phone):'')+petHtml+'</p><table><tr><th>Description</th><th>Qty</th><th>Unit</th><th>Discount</th><th class="right">Total</th></tr>'+items.map(x=>'<tr><td>'+htmlEscape_(x.description)+'</td><td>'+htmlEscape_(x.qty)+'</td><td>'+currency+' '+Number(x.unit_price||0).toFixed(2)+'</td><td>'+currency+' '+Number(x.discount||0).toFixed(2)+'</td><td class="right">'+currency+' '+Number(x.line_total||0).toFixed(2)+'</td></tr>').join('')+'</table><div class="summary"><div class="summary-row"><span class="label">Subtotal</span><span class="value">'+currency+' '+Number(s.subtotal||0).toFixed(2)+'</span></div><div class="summary-row"><span class="label">Discount</span><span class="value">'+currency+' '+Number(s.discount||0).toFixed(2)+'</span></div><div class="summary-row total"><span class="label">TOTAL</span><span class="value">'+currency+' '+Number(s.total||0).toFixed(2)+'</span></div><div class="summary-row"><span class="label">Payment</span><span class="value">'+htmlEscape_(s.payment_method||'')+'</span></div></div>'+paymentQrHtml+photoHtml+'<p style="margin-top:24px;color:#666">Thank you for visiting us.</p></div></body></html>';
   try { if (html.length < 95000) cache.put(cacheKey, html, 21600); } catch (e) {}
   return html;
 }
@@ -1909,12 +1949,23 @@ function saveSessionTimeoutSetting(_authSession, value) {
   return { value: value, label: value === 'never' ? 'Never' : (value === '168' ? '7 days' : value + ' hours') };
 }
 function getCompanySettings(_authSession) { requireRole_(_authSession, ['OWNER','MANAGER']); return getCompanySettings_(); }
+function localePreset_(country) {
+  const key = String(country || '').trim().toUpperCase();
+  return LOCALE_PRESETS_[key] || LOCALE_PRESETS_[LOCALE_DEFAULT_COUNTRY_];
+}
+function shopTimeZone_() {
+  const rows = rows_('Settings');
+  const row = rows.find(x => String(x.key || '') === 'LOCALE_TIMEZONE');
+  return String(row && row.value || '').trim() || Session.getScriptTimeZone();
+}
 function getCompanySettings_() {
   const cache = CacheService.getScriptCache();
   const cacheKey = 'petshop_company_settings_v1_' + (PropertiesService.getScriptProperties().getProperty('DATA_VERSION_COL_Settings') || '0');
   try { const cached = cache.get(cacheKey); if (cached) return JSON.parse(cached); } catch (e) {}
   const rows = rows_('Settings');
   const get = key => { const r = rows.find(x => String(x.key) === key); return r ? String(r.value || '') : ''; };
+  const country = String(get('LOCALE_COUNTRY') || LOCALE_DEFAULT_COUNTRY_).toUpperCase();
+  const preset = localePreset_(country);
   const result = {
     store_name: get('COMPANY_STORE_NAME'),
     address: get('COMPANY_ADDRESS'),
@@ -1930,7 +1981,13 @@ function getCompanySettings_() {
     receipt_design: get('RECEIPT_DESIGN') || 'professional',
     receipt_delivery: ['email','whatsapp'].indexOf(get('RECEIPT_DELIVERY')) >= 0 ? get('RECEIPT_DELIVERY') : 'email',
     show_grooming_before_after_photos: get('SHOW_GROOMING_BEFORE_AFTER_PHOTOS') === 'true',
-    require_receipt_phone_last4: get('REQUIRE_RECEIPT_PHONE_LAST4').trim().toLowerCase() === 'true'
+    require_receipt_phone_last4: get('REQUIRE_RECEIPT_PHONE_LAST4').trim().toLowerCase() === 'true',
+    country: LOCALE_PRESETS_[country] ? country : LOCALE_DEFAULT_COUNTRY_,
+    country_name: preset.country_name,
+    language: ['en','zh'].indexOf(get('LOCALE_LANGUAGE').toLowerCase()) >= 0 ? get('LOCALE_LANGUAGE').toLowerCase() : preset.language,
+    currency_code: get('LOCALE_CURRENCY_CODE') || preset.currency_code,
+    currency_symbol: get('LOCALE_CURRENCY_SYMBOL') || preset.currency_symbol,
+    timezone: get('LOCALE_TIMEZONE') || preset.timezone
   };
   try { cache.put(cacheKey, JSON.stringify(result), 300); } catch (e) {}
   return result;
@@ -1954,6 +2011,14 @@ function saveCompanySettings(_authSession, data) {
     RECEIPT_DESIGN: ['classic','minimal','cute','professional'].indexOf(String(data.receipt_design || 'professional')) >= 0 ? String(data.receipt_design || 'professional') : 'professional',
     RECEIPT_DELIVERY: ['email','whatsapp'].indexOf(String(data.receipt_delivery || 'email').toLowerCase()) >= 0 ? String(data.receipt_delivery || 'email').toLowerCase() : 'email'
   };
+  const requestedCountry = String(data.country || LOCALE_DEFAULT_COUNTRY_).trim().toUpperCase();
+  const country = LOCALE_PRESETS_[requestedCountry] ? requestedCountry : LOCALE_DEFAULT_COUNTRY_;
+  const preset = localePreset_(country);
+  values.LOCALE_COUNTRY = country;
+  values.LOCALE_LANGUAGE = ['en','zh'].indexOf(String(data.language || preset.language).toLowerCase()) >= 0 ? String(data.language || preset.language).toLowerCase() : preset.language;
+  values.LOCALE_CURRENCY_CODE = preset.currency_code;
+  values.LOCALE_CURRENCY_SYMBOL = preset.currency_symbol;
+  values.LOCALE_TIMEZONE = Object.keys(LOCALE_PRESETS_).map(k => LOCALE_PRESETS_[k].timezone).indexOf(String(data.timezone || '').trim()) >= 0 ? String(data.timezone).trim() : preset.timezone;
   if (Object.prototype.hasOwnProperty.call(data, 'show_grooming_before_after_photos')) {
     if (currentUser.role !== 'OWNER') throw new Error('Only the owner can change grooming receipt photo settings.');
     values.SHOW_GROOMING_BEFORE_AFTER_PHOTOS = data.show_grooming_before_after_photos === true ? 'true' : 'false';
@@ -1961,13 +2026,67 @@ function saveCompanySettings(_authSession, data) {
   if (Object.prototype.hasOwnProperty.call(data, 'require_receipt_phone_last4')) {
     values.REQUIRE_RECEIPT_PHONE_LAST4 = data.require_receipt_phone_last4 === true ? 'true' : 'false';
   }
-  Object.keys(values).forEach(key => upsertRow_(_authSession, 'Settings', {key: key, value: values[key]}, 'key', true));
+  saveSettingsValues_(_authSession, values);
   bumpVersion_('Settings');
-  try { CacheService.getScriptCache().removeAll(['petshop_company_settings_v1_' + (PropertiesService.getScriptProperties().getProperty('DATA_VERSION_COL_Settings') || '0')]); } catch (e) {}
+  invalidateCompanySettingsCache_();
   return getCompanySettings_();
 }
+function saveShopLocale(_authSession, data) {
+  requireRole_(_authSession, ['OWNER','MANAGER']);
+  data = data || {};
+  const requestedCountry = String(data.country || LOCALE_DEFAULT_COUNTRY_).trim().toUpperCase();
+  const country = LOCALE_PRESETS_[requestedCountry] ? requestedCountry : LOCALE_DEFAULT_COUNTRY_;
+  const preset = localePreset_(country);
+  const language = String(data.language || preset.language).trim().toLowerCase();
+  if (['en','zh'].indexOf(language) < 0) throw new Error('Choose English or Chinese.');
+  const timezone = String(data.timezone || preset.timezone).trim();
+  if (Object.keys(LOCALE_PRESETS_).map(k => LOCALE_PRESETS_[k].timezone).indexOf(timezone) < 0) throw new Error('Choose a supported time zone.');
+  saveSettingsValues_(_authSession, {
+    LOCALE_COUNTRY: country,
+    LOCALE_LANGUAGE: language,
+    LOCALE_CURRENCY_CODE: preset.currency_code,
+    LOCALE_CURRENCY_SYMBOL: preset.currency_symbol,
+    LOCALE_TIMEZONE: timezone
+  });
+  bumpVersion_('Settings');
+  invalidateCompanySettingsCache_();
+  return getCompanySettings_();
+}
+function saveSettingsValues_(_authSession, values) {
+  requireAuthorizedUser_(_authSession);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sh = getSS_().getSheetByName('Settings');
+    if (!sh) throw new Error('Missing sheet: Settings');
+    ensureSchema_(sh, SCHEMA.Settings);
+    const rows = sh.getDataRange().getValues();
+    const headers = rows[0].map(String), keyCol = headers.indexOf('key'), valueCol = headers.indexOf('value');
+    if (keyCol < 0 || valueCol < 0) throw new Error('Settings sheet is missing key/value columns.');
+    const rowByKey = Object.create(null);
+    for (let i = 1; i < rows.length; i++) {
+      const key = String(rows[i][keyCol] || '');
+      if (key && rowByKey[key] === undefined) rowByKey[key] = i;
+    }
+    Object.keys(values).forEach(key => {
+      const rowIndex = rowByKey[key];
+      if (rowIndex !== undefined) rows[rowIndex][valueCol] = values[key];
+      else {
+        const row = new Array(headers.length).fill('');
+        row[keyCol] = key; row[valueCol] = values[key];
+        rowByKey[key] = rows.length; rows.push(row);
+      }
+    });
+    if (rows.length > 1) sh.getRange(2, 1, rows.length - 1, headers.length).setValues(rows.slice(1).map(formulaSafeSheetRow_));
+  } finally {
+    lock.releaseLock();
+  }
+}
+function invalidateCompanySettingsCache_() {
+  try { CacheService.getScriptCache().removeAll(['petshop_company_settings_v1_' + (PropertiesService.getScriptProperties().getProperty('DATA_VERSION_COL_Settings') || '0')]); } catch (e) {}
+}
 function expireMemberships_() {
-  const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  const today = Utilities.formatDate(new Date(), shopTimeZone_(), 'yyyy-MM-dd');
   const sh = getSS_().getSheetByName('Memberships');
   if (!sh || sh.getLastRow() < 2) return;
   const values = sh.getDataRange().getValues();
@@ -1978,7 +2097,7 @@ function expireMemberships_() {
   for (let r = 1; r < values.length; r++) {
     const status = String(values[r][statusCol] || '').trim().toUpperCase();
     let expiry = values[r][expiryCol];
-    if (expiry instanceof Date) expiry = Utilities.formatDate(expiry, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    if (expiry instanceof Date) expiry = Utilities.formatDate(expiry, shopTimeZone_(), 'yyyy-MM-dd');
     else {
       expiry = String(expiry || '').trim();
       const iso = expiry.match(/^(\d{4}-\d{2}-\d{2})/);
@@ -2592,7 +2711,7 @@ function makeSale(_authSession, sale, items, payment) {
       return { sale_id:requestedSaleId, sale_at:existingSale.sale_at, subtotal:Number(existingSale.subtotal||0), discount:Number(existingSale.discount||0), total:Number(existingSale.total||0), payment_method:String(existingSale.payment_method||''), points_earned:0, lines:priorLines, receipt_photo_urls:priorPhotos, idempotent_replay:true, skip_receipt_enqueue:true };
     }
     const now = new Date();
-    const today = Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    const today = Utilities.formatDate(now, shopTimeZone_(), 'yyyy-MM-dd');
     const customerId = String(sale.customer_id || '');
     // Optional booking/boarding source: validate before allowing the sale to complete.
     const sourceType = String(sale.source_type || '').toUpperCase();
@@ -2886,7 +3005,7 @@ function getGroomerCommissionRates_() {
 }
 function getGroomerCommissionData(_authSession, month) {
   requireRole_(_authSession, ['OWNER','MANAGER']);
-  month = String(month || Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM')).slice(0, 7);
+  month = String(month || Utilities.formatDate(new Date(), shopTimeZone_(), 'yyyy-MM')).slice(0, 7);
   if (!/^\d{4}-\d{2}$/.test(month)) throw new Error('Select a valid month.');
   const rates = getGroomerCommissionRates_();
   const staffRates = getStaffCommissionRates_();
